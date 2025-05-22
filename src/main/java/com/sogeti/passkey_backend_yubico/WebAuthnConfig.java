@@ -1,7 +1,7 @@
 package com.sogeti.passkey_backend_yubico;
 
 
-//import com.sogeti.passkey_backend_yubico.InMemoryCredentialRepository;
+import com.sogeti.passkey_backend_yubico.InMemoryCredentialRepository;
 import com.yubico.webauthn.RelyingParty;
 import com.yubico.webauthn.data.RelyingPartyIdentity;
 import org.springframework.context.annotation.Bean;
