@@ -1,9 +1,6 @@
-package com.sogeti.passkey_backend_yubico;
+package com.sogeti.passkey_backend_yubico.repository;
 
 
-
-import com.google.common.cache.Cache;
-import com.google.common.cache.CacheBuilder;
 import com.yubico.webauthn.CredentialRepository;
 import com.yubico.webauthn.RegisteredCredential;
 import com.yubico.webauthn.data.ByteArray;
@@ -11,20 +8,17 @@ import com.yubico.webauthn.data.PublicKeyCredentialDescriptor;
 import com.yubico.webauthn.data.UserIdentity;
 import org.springframework.stereotype.Repository;
 
-import java.security.SecureRandom;
 import java.util.Collections;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 import static com.yubico.webauthn.data.PublicKeyCredentialType.PUBLIC_KEY;
 
 @Repository
 public class InMemoryCredentialRepository implements CredentialRepository {
-    private final SecureRandom random = new SecureRandom();
 
      final Map<String, UserIdentity> users = new ConcurrentHashMap<>();
      private final Map<ByteArray, Set<RegisteredCredential>> credentialsByUserHandle = new ConcurrentHashMap<>();
@@ -52,18 +46,25 @@ public class InMemoryCredentialRepository implements CredentialRepository {
 
     @Override
     public Optional<ByteArray> getUserHandleForUsername(String username) {
-        //        Map<String, ByteArray> filteredUsersMap = new ConcurrentHashMap<>();
-//                .Stream()
-//                .filter(map -> map.getKey().getName().equals(username))
-//                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+//                Map<String, ByteArray> filteredUsersMap = new ConcurrentHashMap<>();
+        Optional<Map.Entry<String, UserIdentity>> userIdentity = users.entrySet().stream()
+        .filter(map -> map.getKey().equals(username))
+        .findFirst();
 
-        for(Map.Entry<String, UserIdentity> userHandle : users.entrySet()){
-            if(userHandle.getKey().equals(username)){
-                UserIdentity userIdentity = userHandle.getValue();
-                return Optional.of(userIdentity.getId());
-            }
+        if (userIdentity.isPresent()) {
+            UserIdentity id = userIdentity.get().getValue();
+            return Optional.of(id.getId());
         }
+
         return Optional.empty();
+
+//        for(Map.Entry<String, UserIdentity> userHandle : users.entrySet()){
+//            if(userHandle.getKey().equals(username)){
+//                UserIdentity userIdentity = userHandle.getValue();
+//                return Optional.of(userIdentity.getId());
+//            }
+//        }
+//        return Optional.empty();
     }
 
     @Override
@@ -97,7 +98,14 @@ public class InMemoryCredentialRepository implements CredentialRepository {
 
     }
 
+    public Optional<UserIdentity> getUserByUsername(String username) {
+        return Optional.ofNullable(users.get(username));
+    }
 
+    public boolean userExists(String username) {
+        return users.containsKey(username);
+    }
+    
     public UserIdentity createUser(String username, String displayName, ByteArray userHandle) {
         UserIdentity userIdentity = UserIdentity.builder()
                         .name(username)
@@ -138,10 +146,6 @@ public class InMemoryCredentialRepository implements CredentialRepository {
         }
     }
 
-    private ByteArray generateRandom(int length) {
-         byte[] bytes = new byte[length];
-         random.nextBytes(bytes);
-         return new ByteArray(bytes);
-    }
+
 
 }

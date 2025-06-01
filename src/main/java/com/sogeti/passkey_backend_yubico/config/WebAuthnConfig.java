@@ -1,7 +1,7 @@
-package com.sogeti.passkey_backend_yubico;
+package com.sogeti.passkey_backend_yubico.config;
 
 
-import com.sogeti.passkey_backend_yubico.InMemoryCredentialRepository;
+import com.sogeti.passkey_backend_yubico.repository.InMemoryCredentialRepository;
 import com.yubico.webauthn.RelyingParty;
 import com.yubico.webauthn.data.RelyingPartyIdentity;
 import org.springframework.context.annotation.Bean;
@@ -22,8 +22,7 @@ public class WebAuthnConfig {
         return RelyingParty.builder()
                 .identity(rpIdentity)
                 .credentialRepository(credentialRepository)
-                //Setting up the trusted source for only the necessary ports.
-                .origins(Set.of("http://localhost:8080")) // Add port for the frontend that I will still create.
+                .origins(Set.of("http://localhost:5500"))
                 .build();
     }
 }

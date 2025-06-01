@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebAuthn Registration Test</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/@simplewebauthn/browser/dist/bundle/index.umd.min.js"></script>
+    <style>
+        body { font-family: sans-serif; }
+        .container { max-width: 500px; margin: 50px auto; padding: 20px; }
+        label { display: block; margin-bottom: 8px; }
+        input { width: 100%; padding: 8px; margin-bottom: 16px; border-radius: 4px; border: 1px solid #ccc; }
+        button { padding: 10px 15px; border-radius: 4px; cursor: pointer; }
+        .message { margin-top: 15px; padding: 10px; border-radius: 4px; }
+        .success { background-color: #e6fffa; border: 1px solid #38a169; color: #2c7a7b; }
+        .error { background-color: #ffe5e5; border: 1px solid #c53030; color: #9b2c2c; }
+    </style>
+</head>
+<body class="bg-gray-100">
+
+<div class="container bg-white p-8 rounded-lg shadow-md">
+    <h1 class="text-2xl font-bold mb-6 text-center text-gray-700">Register New Passkey</h1>
+
+    <div class="mb-4">
+        <label for="username" class="block text-sm font-medium text-gray-700">Username:</label>
+        <input type="text" id="username" name="username" value="testuser" class="mt-1 focus:ring-indigo-500 focus:border-indigo-500 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md">
+    </div>
+
+    <div class="mb-6">
+        <label for="displayName" class="block text-sm font-medium text-gray-700">Display Name:</label>
+        <input type="text" id="displayName" name="displayName" value="Test User Device" class="mt-1 focus:ring-indigo-500 focus:border-indigo-500 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md">
+    </div>
+
+    <button id="btnRegister" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-md focus:outline-none focus:shadow-outline">
+        Start Registration
+    </button>
+
+    <div id="messageArea" class="mt-4">
+    </div>
+</div>
+
+<script>
+    if (typeof SimpleWebAuthnBrowser === 'undefined') {
+        console.error('SimpleWebAuthnBrowser is not loaded. Check the script tag.');
+        alert('Error: WebAuthn library not loaded.');
+    }
+
+    const { startRegistration, browserSupportsWebAuthn } = SimpleWebAuthnBrowser;
+
+    const elemUsername = document.getElementById('username');
+    const elemDisplayName = document.getElementById('displayName');
+    const btnRegister = document.getElementById('btnRegister');
+    const messageArea = document.getElementById('messageArea');
+
+    if (!browserSupportsWebAuthn()) {
+        showMessage('This browser does not support WebAuthn.', 'error');
+        btnRegister.disabled = true;
+    }
+
+    btnRegister.addEventListener('click', async () => {
+        showMessage('');
+        const username = elemUsername.value;
+        const displayName = elemDisplayName.value;
+
+        if (!username || !displayName) {
+            showMessage('Please enter both username and display name.', 'error');
+            return;
+        }
+
+        try {
+            console.log('Fetching registration options from server...');
+            const respOptions = await fetch('http://localhost:8080/webauthn/register/start', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                credentials: 'include',
+                body: JSON.stringify({ username, displayName }),
+            });
+
+            if (!respOptions.ok) {
+                const errorData = await respOptions.json();
+                console.error('Error fetching registration options:', errorData);
+                showMessage(`Error from server: ${errorData.error || respOptions.statusText}`, 'error');
+                return;
+            }
+
+            const optionsFromServer = await respOptions.json();
+            if (!optionsFromServer.publicKey) {
+                console.error('Error: "publicKey" field missing in options from server.', optionsFromServer);
+                showMessage('Error: Invalid options structure from server (missing publicKey).', 'error');
+                return;
+            }
+            console.log('Received registration options from server:', optionsFromServer);
+            const actualCreationOptions = optionsFromServer.publicKey;
+
+            let attResp;
+            try {
+                console.log('optionsFromServer:', actualCreationOptions);
+
+
+                showMessage('Please interact with your authenticator (e.g., touch security key, use fingerprint)...', 'info');
+
+                attResp = await startRegistration({optionsJSON: actualCreationOptions});
+                console.log('Authenticator response (attestation):', attResp);
+                showMessage('Registration ceremony completed by authenticator!', 'success');
+
+            } catch (error) {
+                console.error('Error during startRegistration call with authenticator:', error);
+                let errorMessage = error.message || 'An unknown error occurred during WebAuthn registration.';
+                if (error.name === 'InvalidStateError') {
+                    errorMessage = 'Error: Authenticator was probably already registered by this user or an invalid state occurred.';
+                } else if (error.name === 'NotAllowedError') {
+                    errorMessage = 'Error: The registration operation was not allowed, timed out, or cancelled by the user.';
+                }
+                showMessage(errorMessage, 'error');
+                return;
+            }
+
+
+            console.log('Next step: Send this attestation response to your /register/finish endpoint:');
+            console.log(JSON.stringify(attResp, null, 2));
+            showMessage('Authenticator responded. Next: send to /register/finish.', 'success');
+
+
+            const verificationResp = await fetch('http://localhost:8080/webauthn/register/finish', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(attResp),
+            });
+
+            if (!verificationResp.ok) {
+                const errorData = await verificationResp.json();
+                showMessage(`Verification failed on server: ${errorData.error || verificationResp.statusText}`, 'error');
+                return;
+            }
+
+            const verificationJSON = await verificationResp.json();
+
+            if (verificationJSON && verificationJSON.success) {
+                showMessage('Registration successfully verified and completed by server!', 'success');
+            } else {
+                showMessage(`Server verification failed: ${verificationJSON.message || 'Unknown error.'}`, 'error');
+            }
+
+
+        } catch (fetchError) {
+            console.error('Fetch error:', fetchError);
+            showMessage('Could not connect to the server or another fetch error occurred.', 'error');
+        }
+    });
+
+    function showMessage(message, type = 'info') {
+        messageArea.innerHTML = '';
+        if (!message) return;
+
+        const messageDiv = document.createElement('div');
+        messageDiv.textContent = message;
+        messageDiv.className = 'message';
+        if (type === 'success') {
+            messageDiv.classList.add('success', 'text-green-700', 'bg-green-100', 'border-green-400');
+        } else if (type === 'error') {
+            messageDiv.classList.add('error', 'text-red-700', 'bg-red-100', 'border-red-400');
+        } else {
+            messageDiv.classList.add('info', 'text-blue-700', 'bg-blue-100', 'border-blue-400');
+        }
+        messageArea.appendChild(messageDiv);
+    }
+
+</script>
+
+</body>
+</html>
