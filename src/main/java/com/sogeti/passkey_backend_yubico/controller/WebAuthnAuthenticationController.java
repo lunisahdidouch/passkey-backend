@@ -92,7 +92,7 @@ public class WebAuthnAuthenticationController {
                     PublicKeyCredential.parseAssertionResponseJson(publicKeyCredentialJson);
 
             AssertionResult result = relyingParty.finishAssertion(FinishAssertionOptions.builder()
-                    .request(assertionRequest)
+                    .request(getAssertionRequest(assertionRequest))
                     .response(pkc)
                     .build());
 
@@ -118,5 +118,9 @@ public class WebAuthnAuthenticationController {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body("{\"success\":false, \"error\":\"An unexpected error occurred during authentication.\"}");
         }
+    }
+
+    private static AssertionRequest getAssertionRequest(AssertionRequest assertionRequest) {
+        return assertionRequest;
     }
 }

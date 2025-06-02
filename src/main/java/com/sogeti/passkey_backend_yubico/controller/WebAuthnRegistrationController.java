@@ -25,6 +25,8 @@ import java.security.SecureRandom;
 import java.util.Optional;
 import org.springframework.web.bind.annotation.CrossOrigin;
 
+import static com.sogeti.passkey_backend_yubico.utils.ByteUtils.generateRandom;
+
 @RestController
 @RequestMapping("/webauthn/register")
 @CrossOrigin(origins = "http://localhost:5500", allowCredentials = "true")
@@ -78,9 +80,7 @@ public class WebAuthnRegistrationController {
                 logger.info("Existing user found for registration: {}", username);
             } else {
                 logger.info("User {} not found, creating new user.", username);
-                byte[] userHandleBytes = new byte[64];
-                random.nextBytes(userHandleBytes);
-                ByteArray newUserHandle = new ByteArray(userHandleBytes);
+                ByteArray newUserHandle = generateRandom(64);
 
                 userIdentity = credentialRepository.createUser(username, displayName, newUserHandle);
                 logger.info("New user {} created with handle: {}", username, newUserHandle.getBase64Url());

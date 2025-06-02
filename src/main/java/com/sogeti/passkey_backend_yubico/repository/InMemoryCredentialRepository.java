@@ -55,7 +55,6 @@ public class InMemoryCredentialRepository implements CredentialRepository {
             UserIdentity id = userIdentity.get().getValue();
             return Optional.of(id.getId());
         }
-
         return Optional.empty();
 
 //        for(Map.Entry<String, UserIdentity> userHandle : users.entrySet()){
