@@ -39,6 +39,7 @@ public class WebAuthnRegistrationController {
 
     private static final String SESSION_REGISTRATION_OPTIONS = "webauthn_registration_options";
     private static final String SESSION_REGISTRATION_USERNAME = "webauthn_registration_username";
+    private static final String SESSION_AUTHENTICATED_USER = "authenticated_username";
 
 
     @Autowired
@@ -50,59 +51,98 @@ public class WebAuthnRegistrationController {
     @PostMapping("/start")
     public ResponseEntity<String> startRegistration(@RequestBody RegistrationRequestDto registrationRequest, HttpSession session) {
 
-        if (registrationRequest == null || registrationRequest.getUsername() == null || registrationRequest.getUsername().isBlank()) {
-            logger.warn("Registration start request received with missing username.");
-            return ResponseEntity.badRequest().body("{\"error\":\"Username is required.\"}");
-        }
-        if (registrationRequest.getDisplayName() == null || registrationRequest.getDisplayName().isBlank()) {
-            logger.warn("Registration start request received with missing displayName for username: {}", registrationRequest.getUsername());
-            return ResponseEntity.badRequest().body("{\"error\":\"Display name is required.\"}");
-        }
+        // Check if this is an authenticated user adding a new passkey
+        String authenticatedUsername = (String) session.getAttribute(SESSION_AUTHENTICATED_USER);
+        String addPasskeyUsername = (String) session.getAttribute("add_passkey_username");
 
-        String username = registrationRequest.getUsername();
-        String displayName = registrationRequest.getDisplayName();
-        logger.info("Attempting to start registration for username: {}", username);
+        boolean isAddingPasskey = authenticatedUsername != null && addPasskeyUsername != null;
 
-        try {
-            UserIdentity userIdentity;
+        if (isAddingPasskey) {
+            // For adding passkeys, use the authenticated username
+            String username = authenticatedUsername;
+            logger.info("Authenticated user {} is adding a new passkey", username);
 
-            Optional<UserIdentity> existingUserOpt = credentialRepository.getUserHandleForUsername(username)
-                    .map(handle -> UserIdentity.builder()
-                            .name(username)
-                            .displayName(displayName)
-                            .id(handle)
-                            .build()
-                    );
+            try {
+                Optional<UserIdentity> existingUserOpt = credentialRepository.getUserByUsername(username);
+                if (existingUserOpt.isEmpty()) {
+                    logger.error("Authenticated user {} not found in repository", username);
+                    return ResponseEntity.status(500).body("{\"error\":\"User not found\"}");
+                }
 
+                UserIdentity userIdentity = existingUserOpt.get();
 
-            if (existingUserOpt.isPresent()) {
-                userIdentity = existingUserOpt.get();
-                logger.info("Existing user found for registration: {}", username);
-            } else {
-                logger.info("User {} not found, creating new user.", username);
-                ByteArray newUserHandle = generateRandom(64);
+                StartRegistrationOptions registrationOptions = StartRegistrationOptions.builder()
+                        .user(userIdentity)
+                        .build();
 
-                userIdentity = credentialRepository.createUser(username, displayName, newUserHandle);
-                logger.info("New user {} created with handle: {}", username, newUserHandle.getBase64Url());
+                PublicKeyCredentialCreationOptions credentialCreationOptions = relyingParty.startRegistration(registrationOptions);
+
+                session.setAttribute(SESSION_REGISTRATION_OPTIONS, credentialCreationOptions.toJson());
+                session.setAttribute(SESSION_REGISTRATION_USERNAME, username);
+                logger.info("Registration options generated for adding passkey to {}. Stored in session.", username);
+
+                String JSONResponse = credentialCreationOptions.toCredentialsCreateJson();
+                return ResponseEntity.ok(JSONResponse);
+
+            } catch (Exception e) {
+                logger.error("Error during startRegistration for adding passkey to user: {}", username, e);
+                return ResponseEntity.status(500).body(null);
+            }
+        } else {
+            // Original registration flow for new users
+            if (registrationRequest == null || registrationRequest.getUsername() == null || registrationRequest.getUsername().isBlank()) {
+                logger.warn("Registration start request received with missing username.");
+                return ResponseEntity.badRequest().body("{\"error\":\"Username is required.\"}");
+            }
+            if (registrationRequest.getDisplayName() == null || registrationRequest.getDisplayName().isBlank()) {
+                logger.warn("Registration start request received with missing displayName for username: {}", registrationRequest.getUsername());
+                return ResponseEntity.badRequest().body("{\"error\":\"Display name is required.\"}");
             }
 
-            StartRegistrationOptions registrationOptions = StartRegistrationOptions.builder()
-                    .user(userIdentity)
-                    .build();
+            String username = registrationRequest.getUsername();
+            String displayName = registrationRequest.getDisplayName();
+            logger.info("Attempting to start registration for username: {}", username);
 
-            PublicKeyCredentialCreationOptions credentialCreationOptions = relyingParty.startRegistration(registrationOptions);
+            try {
+                UserIdentity userIdentity;
 
-            session.setAttribute(SESSION_REGISTRATION_OPTIONS, credentialCreationOptions.toJson());
-            session.setAttribute(SESSION_REGISTRATION_USERNAME, username);
-            logger.info("Registration options generated for {}. Stored in session.", username);
+                Optional<UserIdentity> existingUserOpt = credentialRepository.getUserHandleForUsername(username)
+                        .map(handle -> UserIdentity.builder()
+                                .name(username)
+                                .displayName(displayName)
+                                .id(handle)
+                                .build()
+                        );
 
-            String JSONResponse = credentialCreationOptions.toCredentialsCreateJson();
-            logger.debug("Sending credential creation options to client for {}: {}", username, JSONResponse);
-            return ResponseEntity.ok(JSONResponse);
+                if (existingUserOpt.isPresent()) {
+                    userIdentity = existingUserOpt.get();
+                    logger.info("Existing user found for registration: {}", username);
+                } else {
+                    logger.info("User {} not found, creating new user.", username);
+                    ByteArray newUserHandle = generateRandom(64);
 
-        } catch (Exception e) {
-            logger.error("Error during startRegistration for username: {}", username, e);
-            return ResponseEntity.status(500).body(null);
+                    userIdentity = credentialRepository.createUser(username, displayName, newUserHandle);
+                    logger.info("New user {} created with handle: {}", username, newUserHandle.getBase64Url());
+                }
+
+                StartRegistrationOptions registrationOptions = StartRegistrationOptions.builder()
+                        .user(userIdentity)
+                        .build();
+
+                PublicKeyCredentialCreationOptions credentialCreationOptions = relyingParty.startRegistration(registrationOptions);
+
+                session.setAttribute(SESSION_REGISTRATION_OPTIONS, credentialCreationOptions.toJson());
+                session.setAttribute(SESSION_REGISTRATION_USERNAME, username);
+                logger.info("Registration options generated for {}. Stored in session.", username);
+
+                String JSONResponse = credentialCreationOptions.toCredentialsCreateJson();
+                logger.debug("Sending credential creation options to client for {}: {}", username, JSONResponse);
+                return ResponseEntity.ok(JSONResponse);
+
+            } catch (Exception e) {
+                logger.error("Error during startRegistration for username: {}", username, e);
+                return ResponseEntity.status(500).body(null);
+            }
         }
     }
 
@@ -113,6 +153,8 @@ public class WebAuthnRegistrationController {
 
         String username = (String) session.getAttribute(SESSION_REGISTRATION_USERNAME);
         String credentialCreationOptionsJson = (String) session.getAttribute(SESSION_REGISTRATION_OPTIONS);
+        String authenticatedUsername = (String) session.getAttribute(SESSION_AUTHENTICATED_USER);
+        boolean isAddingPasskey = authenticatedUsername != null && username != null && username.equals(authenticatedUsername);
 
         if (username == null || credentialCreationOptionsJson == null) {
             logger.warn("No registration session found");
@@ -144,13 +186,7 @@ public class WebAuthnRegistrationController {
                     .signatureCount(result.getSignatureCount())
                     .build();
 
-            Optional<UserIdentity> userIdentityOpt = credentialRepository.getUserHandleForUsername(username)
-                    .map(handle -> UserIdentity.builder()
-                            .name(username)
-                            .displayName(username)
-                            .id(handle)
-                            .build()
-                    );
+            Optional<UserIdentity> userIdentityOpt = credentialRepository.getUserByUsername(username);
 
             if (userIdentityOpt.isEmpty()) {
                 logger.error("User identity not found for username: {}", username);
@@ -161,10 +197,15 @@ public class WebAuthnRegistrationController {
 
             session.removeAttribute(SESSION_REGISTRATION_OPTIONS);
             session.removeAttribute(SESSION_REGISTRATION_USERNAME);
+            session.removeAttribute("add_passkey_username");
 
-            logger.info("Registration completed successfully for user: {}", username);
-
-            return ResponseEntity.ok("{\"success\":true,\"username\":\"" + username + "\"}");
+            if (isAddingPasskey) {
+                logger.info("Passkey added successfully for authenticated user: {}", username);
+                return ResponseEntity.ok("{\"success\":true,\"username\":\"" + username + "\",\"isAddingPasskey\":true}");
+            } else {
+                logger.info("Registration completed successfully for user: {}", username);
+                return ResponseEntity.ok("{\"success\":true,\"username\":\"" + username + "\"}");
+            }
 
         } catch (Exception e) {
             logger.error("Error during finishRegistration: {}", e.getMessage(), e);

@@ -1,6 +1,7 @@
 package com.sogeti.passkey_backend_yubico.repository;
 
 
+import com.sogeti.passkey_backend_yubico.model.PasskeyInfo;
 import com.yubico.webauthn.CredentialRepository;
 import com.yubico.webauthn.RegisteredCredential;
 import com.yubico.webauthn.data.ByteArray;
@@ -8,10 +9,8 @@ import com.yubico.webauthn.data.PublicKeyCredentialDescriptor;
 import com.yubico.webauthn.data.UserIdentity;
 import org.springframework.stereotype.Repository;
 
-import java.util.Collections;
-import java.util.Map;
-import java.util.Optional;
-import java.util.Set;
+import java.time.LocalDateTime;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
@@ -24,7 +23,8 @@ public class InMemoryCredentialRepository implements CredentialRepository {
      private final Map<ByteArray, Set<RegisteredCredential>> credentialsByUserHandle = new ConcurrentHashMap<>();
      private final Map<ByteArray, String> credentialIdToUsername = new ConcurrentHashMap<>();
 
-
+    private final Map<String, PasskeyInfo> passkeyMetadata = new ConcurrentHashMap<>();
+    private final Map<String, Integer> userPasskeyCounters = new ConcurrentHashMap<>();
 
     @Override
     public Set<PublicKeyCredentialDescriptor> getCredentialIdsForUsername(String username) {
@@ -46,7 +46,6 @@ public class InMemoryCredentialRepository implements CredentialRepository {
 
     @Override
     public Optional<ByteArray> getUserHandleForUsername(String username) {
-//                Map<String, ByteArray> filteredUsersMap = new ConcurrentHashMap<>();
         Optional<Map.Entry<String, UserIdentity>> userIdentity = users.entrySet().stream()
         .filter(map -> map.getKey().equals(username))
         .findFirst();
@@ -56,14 +55,6 @@ public class InMemoryCredentialRepository implements CredentialRepository {
             return Optional.of(id.getId());
         }
         return Optional.empty();
-
-//        for(Map.Entry<String, UserIdentity> userHandle : users.entrySet()){
-//            if(userHandle.getKey().equals(username)){
-//                UserIdentity userIdentity = userHandle.getValue();
-//                return Optional.of(userIdentity.getId());
-//            }
-//        }
-//        return Optional.empty();
     }
 
     @Override
@@ -113,12 +104,26 @@ public class InMemoryCredentialRepository implements CredentialRepository {
                         .build();
         users.put(username, userIdentity);
         credentialsByUserHandle.put(userHandle, ConcurrentHashMap.newKeySet());
+        userPasskeyCounters.put(username, 0);
         return userIdentity;
     }
 
     public void addCredential(UserIdentity user, RegisteredCredential credential) {
         credentialsByUserHandle.computeIfAbsent(user.getId(), k -> ConcurrentHashMap.newKeySet()).add(credential);
         credentialIdToUsername.put(credential.getCredentialId(), user.getName());
+
+        String username = user.getName();
+        int counter = userPasskeyCounters.getOrDefault(username, 0) + 1;
+        userPasskeyCounters.put(username, counter);
+
+        String credentialIdStr = credential.getCredentialId().getBase64Url();
+        PasskeyInfo passkeyInfo = new PasskeyInfo(
+                credentialIdStr,
+                "Passkey " + counter,
+                LocalDateTime.now(),
+                LocalDateTime.now()
+        );
+        passkeyMetadata.put(credentialIdStr, passkeyInfo);
     }
 
     public void updateSignatureCount(ByteArray userHandle, ByteArray credentialId, long newSignatureCount) {
@@ -144,7 +149,57 @@ public class InMemoryCredentialRepository implements CredentialRepository {
             }
         }
     }
+    public List<PasskeyInfo> getPasskeysForUser(String username) {
+        Optional<ByteArray> userHandleOpt = getUserHandleForUsername(username);
+        if (userHandleOpt.isPresent()) {
+            Set<RegisteredCredential> credentials = credentialsByUserHandle.get(userHandleOpt.get());
+            if (credentials != null) {
+                return credentials.stream()
+                        .map(credential -> passkeyMetadata.get(credential.getCredentialId().getBase64Url()))
+                        .filter(Objects::nonNull)
+                        .collect(Collectors.toList());
+            }
+        }
+        return Collections.emptyList();
+    }
 
+    public boolean updatePasskeyName(String username, String passkeyId, String newName) {
+        PasskeyInfo info = passkeyMetadata.get(passkeyId);
+        if (info != null) {
+            // Verify the passkey belongs to the user
+            Optional<ByteArray> userHandleOpt = getUserHandleForUsername(username);
+            if (userHandleOpt.isPresent()) {
+                Set<RegisteredCredential> credentials = credentialsByUserHandle.get(userHandleOpt.get());
+                if (credentials != null && credentials.stream().anyMatch(cred -> cred.getCredentialId().getBase64Url().equals(passkeyId))) {
+                    info.setName(newName);
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    public boolean deletePasskey(String username, String passkeyId) {
+        Optional<ByteArray> userHandleOpt = getUserHandleForUsername(username);
+        if (userHandleOpt.isPresent()) {
+            Set<RegisteredCredential> credentials = credentialsByUserHandle.get(userHandleOpt.get());
+            if (credentials != null) {
+                boolean removed = credentials.removeIf(cred -> cred.getCredentialId().getBase64Url().equals(passkeyId));
+                if (removed) {
+                    passkeyMetadata.remove(passkeyId);
+                    // Find and remove the credential ID mapping
+                    credentialIdToUsername.entrySet().removeIf(entry -> entry.getKey().getBase64Url().equals(passkeyId));
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    public int getPasskeyCountForUser(String username) {
+        List<PasskeyInfo> passkeys = getPasskeysForUser(username);
+        return passkeys.size();
+    }
 
 
 }
