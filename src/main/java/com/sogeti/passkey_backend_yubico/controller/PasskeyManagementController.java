@@ -46,10 +46,7 @@ public class PasskeyManagementController {
     }
 
     @PutMapping("/{passkeyId}/name")
-    public ResponseEntity<?> updatePasskeyName(
-            @PathVariable String passkeyId,
-            @RequestBody Map<String, String> request,
-            HttpSession session) {
+    public ResponseEntity<?> updatePasskeyName(@PathVariable String passkeyId, @RequestBody Map<String, String> request, HttpSession session) {
 
         String authenticatedUsername = (String) session.getAttribute(SESSION_AUTHENTICATED_USER);
 
@@ -119,7 +116,6 @@ public class PasskeyManagementController {
         }
 
         try {
-            // Store the username for the add passkey flow
             session.setAttribute("add_passkey_username", authenticatedUsername);
             logger.info("Started add passkey flow for user: {}", authenticatedUsername);
             return ResponseEntity.ok(Map.of("success", true, "username", authenticatedUsername));

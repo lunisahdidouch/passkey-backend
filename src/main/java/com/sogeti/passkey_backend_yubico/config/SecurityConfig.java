@@ -20,6 +20,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/passkeys/**").permitAll()
                         .anyRequest().authenticated()
                 );
+
         return http.build();
     }
 }

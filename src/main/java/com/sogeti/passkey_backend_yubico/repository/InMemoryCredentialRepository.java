@@ -23,7 +23,7 @@ public class InMemoryCredentialRepository implements CredentialRepository {
      private final Map<ByteArray, Set<RegisteredCredential>> credentialsByUserHandle = new ConcurrentHashMap<>();
      private final Map<ByteArray, String> credentialIdToUsername = new ConcurrentHashMap<>();
 
-    private final Map<String, PasskeyInfo> passkeyMetadata = new ConcurrentHashMap<>();
+    private final Map<String, PasskeyInfo> passkeyData = new ConcurrentHashMap<>();
     private final Map<String, Integer> userPasskeyCounters = new ConcurrentHashMap<>();
 
     @Override
@@ -123,7 +123,7 @@ public class InMemoryCredentialRepository implements CredentialRepository {
                 LocalDateTime.now(),
                 LocalDateTime.now()
         );
-        passkeyMetadata.put(credentialIdStr, passkeyInfo);
+        passkeyData.put(credentialIdStr, passkeyInfo);
     }
 
     public void updateSignatureCount(ByteArray userHandle, ByteArray credentialId, long newSignatureCount) {
@@ -155,7 +155,7 @@ public class InMemoryCredentialRepository implements CredentialRepository {
             Set<RegisteredCredential> credentials = credentialsByUserHandle.get(userHandleOpt.get());
             if (credentials != null) {
                 return credentials.stream()
-                        .map(credential -> passkeyMetadata.get(credential.getCredentialId().getBase64Url()))
+                        .map(credential -> passkeyData.get(credential.getCredentialId().getBase64Url()))
                         .filter(Objects::nonNull)
                         .collect(Collectors.toList());
             }
@@ -164,7 +164,7 @@ public class InMemoryCredentialRepository implements CredentialRepository {
     }
 
     public boolean updatePasskeyName(String username, String passkeyId, String newName) {
-        PasskeyInfo info = passkeyMetadata.get(passkeyId);
+        PasskeyInfo info = passkeyData.get(passkeyId);
         if (info != null) {
             // Verify the passkey belongs to the user
             Optional<ByteArray> userHandleOpt = getUserHandleForUsername(username);
@@ -186,8 +186,7 @@ public class InMemoryCredentialRepository implements CredentialRepository {
             if (credentials != null) {
                 boolean removed = credentials.removeIf(cred -> cred.getCredentialId().getBase64Url().equals(passkeyId));
                 if (removed) {
-                    passkeyMetadata.remove(passkeyId);
-                    // Find and remove the credential ID mapping
+                    passkeyData.remove(passkeyId);
                     credentialIdToUsername.entrySet().removeIf(entry -> entry.getKey().getBase64Url().equals(passkeyId));
                     return true;
                 }
