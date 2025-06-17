@@ -2,16 +2,16 @@ package com.sogeti.passkey_backend_yubico.model;
 
 import java.time.LocalDateTime;
 
-public class PasskeyInfo {
+public class PasskeyInfoDto {
     private String id;
     private String name;
     private LocalDateTime createdAt;
     private LocalDateTime lastUsed;
 
-    public PasskeyInfo() {
+    public PasskeyInfoDto() {
     }
 
-    public PasskeyInfo(String id, String name, LocalDateTime createdAt, LocalDateTime lastUsed) {
+    public PasskeyInfoDto(String id, String name, LocalDateTime createdAt, LocalDateTime lastUsed) {
         this.id = id;
         this.name = name;
         this.createdAt = createdAt;

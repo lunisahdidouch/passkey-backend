@@ -57,15 +57,14 @@ public class WebAuthnRegistrationController {
 
         boolean isAddingPasskey = authenticatedUsername != null && addPasskeyUsername != null;
 
-        if (isAddingPasskey) {
+        if (isAddingPasskey ) {
             // For adding passkeys, use the authenticated username
-            String username = authenticatedUsername;
-            logger.info("Authenticated user {} is adding a new passkey", username);
+            logger.info("Authenticated user {} is adding a new passkey", authenticatedUsername);
 
             try {
-                Optional<UserIdentity> existingUserOpt = credentialRepository.getUserByUsername(username);
+                Optional<UserIdentity> existingUserOpt = credentialRepository.getUserByUsername(authenticatedUsername);
                 if (existingUserOpt.isEmpty()) {
-                    logger.error("Authenticated user {} not found in repository", username);
+                    logger.error("Authenticated user {} not found in repository", authenticatedUsername);
                     return ResponseEntity.status(500).body("{\"error\":\"User not found\"}");
                 }
 
@@ -78,18 +77,17 @@ public class WebAuthnRegistrationController {
                 PublicKeyCredentialCreationOptions credentialCreationOptions = relyingParty.startRegistration(registrationOptions);
 
                 session.setAttribute(SESSION_REGISTRATION_OPTIONS, credentialCreationOptions.toJson());
-                session.setAttribute(SESSION_REGISTRATION_USERNAME, username);
-                logger.info("Registration options generated for adding passkey to {}. Stored in session.", username);
+                session.setAttribute(SESSION_REGISTRATION_USERNAME, authenticatedUsername);
+                logger.info("Registration options generated for adding passkey to {}. Stored in session.", authenticatedUsername);
 
                 String JSONResponse = credentialCreationOptions.toCredentialsCreateJson();
                 return ResponseEntity.ok(JSONResponse);
 
             } catch (Exception e) {
-                logger.error("Error during startRegistration for adding passkey to user: {}", username, e);
+                logger.error("Error during startRegistration for adding passkey to user: {}", authenticatedUsername, e);
                 return ResponseEntity.status(500).body(null);
             }
         } else {
-            // Original registration flow for new users
             if (registrationRequest == null || registrationRequest.getUsername() == null || registrationRequest.getUsername().isBlank()) {
                 logger.warn("Registration start request received with missing username.");
                 return ResponseEntity.badRequest().body("{\"error\":\"Username is required.\"}");
@@ -99,7 +97,16 @@ public class WebAuthnRegistrationController {
                 return ResponseEntity.badRequest().body("{\"error\":\"Display name is required.\"}");
             }
 
+
             String username = registrationRequest.getUsername();
+
+            if (credentialRepository.userExists(username)) {
+                logger.warn("Registration attempt for existing user: {}", username);
+                return ResponseEntity
+                        .status(409)
+                        .body("{\"error\":\"Username already exists.\"}");
+            }
+
             String displayName = registrationRequest.getDisplayName();
             logger.info("Attempting to start registration for username: {}", username);
 
@@ -203,8 +210,9 @@ public class WebAuthnRegistrationController {
                 logger.info("Passkey added successfully for authenticated user: {}", username);
                 return ResponseEntity.ok("{\"success\":true,\"username\":\"" + username + "\",\"isAddingPasskey\":true}");
             } else {
-                logger.info("Registration completed successfully for user: {}", username);
-                return ResponseEntity.ok("{\"success\":true,\"username\":\"" + username + "\"}");
+                session.setAttribute(SESSION_AUTHENTICATED_USER, username);
+                logger.info("Registration completed successfully for user: {} - User is now logged in", username);
+                return ResponseEntity.ok("{\"success\":true,\"username\":\"" + username + "\",\"autoLogin\":true}");
             }
 
         } catch (Exception e) {

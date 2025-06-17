@@ -1,6 +1,6 @@
 package com.sogeti.passkey_backend_yubico.controller;
 
-import com.sogeti.passkey_backend_yubico.model.PasskeyInfo;
+import com.sogeti.passkey_backend_yubico.model.PasskeyInfoDto;
 import com.sogeti.passkey_backend_yubico.repository.InMemoryCredentialRepository;
 import jakarta.servlet.http.HttpSession;
 import org.slf4j.Logger;
@@ -36,7 +36,7 @@ public class PasskeyManagementController {
         }
 
         try {
-            List<PasskeyInfo> passkeys = credentialRepository.getPasskeysForUser(authenticatedUsername);
+            List<PasskeyInfoDto> passkeys = credentialRepository.getPasskeysForUser(authenticatedUsername);
             logger.info("Retrieved {} passkeys for user: {}", passkeys.size(), authenticatedUsername);
             return ResponseEntity.ok(passkeys);
         } catch (Exception e) {
@@ -87,7 +87,7 @@ public class PasskeyManagementController {
 
         try {
             // Check if user has more than 1 passkey before deletion
-            List<PasskeyInfo> userPasskeys = credentialRepository.getPasskeysForUser(authenticatedUsername);
+            List<PasskeyInfoDto> userPasskeys = credentialRepository.getPasskeysForUser(authenticatedUsername);
             if (userPasskeys.size() <= 1) {
                 return ResponseEntity.badRequest().body(Map.of("error", "Cannot delete the last passkey. You must have at least one passkey to access your account."));
             }

@@ -1,7 +1,7 @@
 package com.sogeti.passkey_backend_yubico.repository;
 
 
-import com.sogeti.passkey_backend_yubico.model.PasskeyInfo;
+import com.sogeti.passkey_backend_yubico.model.PasskeyInfoDto;
 import com.yubico.webauthn.CredentialRepository;
 import com.yubico.webauthn.RegisteredCredential;
 import com.yubico.webauthn.data.ByteArray;
@@ -23,7 +23,7 @@ public class InMemoryCredentialRepository implements CredentialRepository {
      private final Map<ByteArray, Set<RegisteredCredential>> credentialsByUserHandle = new ConcurrentHashMap<>();
      private final Map<ByteArray, String> credentialIdToUsername = new ConcurrentHashMap<>();
 
-    private final Map<String, PasskeyInfo> passkeyData = new ConcurrentHashMap<>();
+    private final Map<String, PasskeyInfoDto> passkeyData = new ConcurrentHashMap<>();
     private final Map<String, Integer> userPasskeyCounters = new ConcurrentHashMap<>();
 
     @Override
@@ -117,7 +117,7 @@ public class InMemoryCredentialRepository implements CredentialRepository {
         userPasskeyCounters.put(username, counter);
 
         String credentialIdStr = credential.getCredentialId().getBase64Url();
-        PasskeyInfo passkeyInfo = new PasskeyInfo(
+        PasskeyInfoDto passkeyInfo = new PasskeyInfoDto(
                 credentialIdStr,
                 "Passkey " + counter,
                 LocalDateTime.now(),
@@ -149,7 +149,7 @@ public class InMemoryCredentialRepository implements CredentialRepository {
             }
         }
     }
-    public List<PasskeyInfo> getPasskeysForUser(String username) {
+    public List<PasskeyInfoDto> getPasskeysForUser(String username) {
         Optional<ByteArray> userHandleOpt = getUserHandleForUsername(username);
         if (userHandleOpt.isPresent()) {
             Set<RegisteredCredential> credentials = credentialsByUserHandle.get(userHandleOpt.get());
@@ -164,9 +164,8 @@ public class InMemoryCredentialRepository implements CredentialRepository {
     }
 
     public boolean updatePasskeyName(String username, String passkeyId, String newName) {
-        PasskeyInfo info = passkeyData.get(passkeyId);
+        PasskeyInfoDto info = passkeyData.get(passkeyId);
         if (info != null) {
-            // Verify the passkey belongs to the user
             Optional<ByteArray> userHandleOpt = getUserHandleForUsername(username);
             if (userHandleOpt.isPresent()) {
                 Set<RegisteredCredential> credentials = credentialsByUserHandle.get(userHandleOpt.get());
@@ -193,11 +192,6 @@ public class InMemoryCredentialRepository implements CredentialRepository {
             }
         }
         return false;
-    }
-
-    public int getPasskeyCountForUser(String username) {
-        List<PasskeyInfo> passkeys = getPasskeysForUser(username);
-        return passkeys.size();
     }
 
 
